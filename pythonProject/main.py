@@ -51,7 +51,7 @@ class SimpleFacerec:
         face_names = []
         for face_encoding in face_encodings:
             # See if the face is a match for the known face(s)
-            matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding)
+            matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.5)
             name = "Unknown"
 
             # # If a match was found in known_face_encodings, just use the first one.
