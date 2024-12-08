@@ -1,9 +1,9 @@
 import cv2
 from main import SimpleFacerec
 
-# Encode faces from a folder
+# Encode faces from a folder and database
 sfr = SimpleFacerec()
-sfr.load_encoding_images("images")
+sfr.load_encoding_images(r"C:\Users\dell\source\repos\PatientSystem\images")  # Specify the folder path containing patient images
 
 # Load Camera
 cap = cv2.VideoCapture(0)  # Start with index 0
