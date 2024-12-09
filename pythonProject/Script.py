@@ -1,27 +1,24 @@
+from flask import Flask, request, jsonify, send_from_directory
+from werkzeug.utils import secure_filename
+from flask_cors import CORS
 import face_recognition
 import cv2
 import os
 import numpy as np
 import pyodbc
-from flask import Flask, request, jsonify
-from werkzeug.utils import secure_filename
-from flask_cors import CORS  # Import CORS for enabling cross-origin requests
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "http://localhost:4200"}})
-  # Allow requests from Angular frontend
 
 class SimpleFacerec:
     def __init__(self):
         self.known_face_encodings = []
         self.known_face_names = []
         self.frame_resizing = 0.55
-        self.image_folder = r'C:\Users\dell\source\repos\PatientSystem\images'  # Folder where patient images are stored
+        self.image_folder = r'C:\Users\dell\source\repos\PatientSystem\images'
+        self.patient_data = {}
 
     def connect_to_database(self):
-        """
-        Establish connection to the SQL Server database.
-        """
         try:
             connection = pyodbc.connect(
                 'DRIVER={SQL Server};'
@@ -34,63 +31,50 @@ class SimpleFacerec:
             print(f"Database connection error: {e}")
             return None
 
-    def load_encoding_images(self):
-        """
-        Load encoding images from the database and images folder.
-        """
-        # Load from the database
+    def load_encoding_images(self, base_url):
         connection = self.connect_to_database()
         if connection is None:
-            print("Failed to connect to database.")
             return
 
         cursor = connection.cursor()
-        cursor.execute("SELECT FaceImg, Name FROM dbo.Patients")  # Fetch FaceImg and Name
+        cursor.execute("SELECT Id, Name, Dob, Mobileno, Nationalno, FaceImg FROM dbo.Patients")
         patients = cursor.fetchall()
 
-        if not patients:
-            print("No patient data found in the database.")
-            return
-
-        print(f"{len(patients)} patients found in the database.")
-
-        # Load images and their encodings
         for patient in patients:
-            face_img, name = patient  # Extract FaceImg and Name
-            image_file = os.path.join(self.image_folder, face_img)  # Use FaceImg as the filename
+            patient_id, name, dob, mobile_no, national_no, face_img = patient
+            image_file = os.path.join(self.image_folder, str(face_img))
 
             if not os.path.exists(image_file):
-                print(f"Image file not found: {image_file} for patient {name}")
                 continue
 
             img = cv2.imread(image_file)
             rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
             try:
-                # Get encoding
                 img_encoding = face_recognition.face_encodings(rgb_img)[0]
                 self.known_face_encodings.append(img_encoding)
                 self.known_face_names.append(name)
-                print(f"Loaded encoding for {name}")
+
+                face_img_url = f"{base_url}/images/{face_img}"
+                self.patient_data[name] = {
+                    "mobileno": mobile_no,
+                    "nationalno": national_no,
+                    "id": patient_id,
+                    "dob": dob,
+                    "faceImg": face_img_url
+                }
             except Exception as e:
                 print(f"Error processing {name}: {e}")
 
         connection.close()
-        print("Encoding images loaded successfully.")
 
     def compare_faces(self, unknown_image):
-        """
-        Compare uploaded image against known face encodings.
-        """
-        # Extract face encoding from the uploaded image
         unknown_encoding = face_recognition.face_encodings(unknown_image)
         if not unknown_encoding:
-            return None  # No faces found
+            return None
 
         unknown_encoding = unknown_encoding[0]
-
-        # Compare the uploaded image with known encodings
-        matches = face_recognition.compare_faces(self.known_face_encodings, unknown_encoding,tolerance=0.5)
+        matches = face_recognition.compare_faces(self.known_face_encodings, unknown_encoding, tolerance=0.5)
         face_distances = face_recognition.face_distance(self.known_face_encodings, unknown_encoding)
         best_match_index = np.argmin(face_distances)
 
@@ -98,6 +82,9 @@ class SimpleFacerec:
             return self.known_face_names[best_match_index]
         return None
 
+@app.route('/images/<path:filename>')
+def serve_images(filename):
+    return send_from_directory('C:/Users/dell/source/repos/PatientSystem/images', filename)
 
 @app.route('/detectAndFind', methods=['POST'])
 def detect_and_find():
@@ -108,31 +95,23 @@ def detect_and_find():
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
 
-    # Save the uploaded file temporarily
     filename = secure_filename(file.filename)
-    file_path = os.path.join('uploads', filename)  # Ensure this path exists
+    file_path = os.path.join('uploads', filename)
     file.save(file_path)
 
-    # Load the uploaded image
     unknown_image = face_recognition.load_image_file(file_path)
-
-    # Initialize SimpleFacerec class and load encodings from the database
     facerec = SimpleFacerec()
-    facerec.load_encoding_images()
+    base_url = f"{request.scheme}://{request.host}"
+    facerec.load_encoding_images(base_url)
 
-    # Compare the uploaded image with known encodings
     matched_name = facerec.compare_faces(unknown_image)
-
     if matched_name:
-        return jsonify({"isMatch": True, "patientName": matched_name})
-    else:
-        return jsonify({"isMatch": False, "patientName": "Unknown"})
+        patient_data = facerec.patient_data.get(matched_name)
+        return jsonify({"isMatch": True, "patientName": matched_name, "patientData": patient_data})
 
+    return jsonify({"isMatch": False, "patientName": "Unknown", "patientData": {}})
 
 if __name__ == '__main__':
-    # Create upload folder if it doesn't exist
     if not os.path.exists('uploads'):
         os.makedirs('uploads')
-
-    # Run the Flask app
     app.run(debug=True)
