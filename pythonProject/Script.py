@@ -17,7 +17,7 @@ class SimpleFacerec:
         self.frame_resizing = 0.55
         self.image_folder = r'C:\Users\dell\source\repos\PatientSystem\images'
         self.patient_data = {}
-
+k
     def connect_to_database(self):
         try:
             connection = pyodbc.connect(
