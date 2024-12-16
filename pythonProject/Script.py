@@ -19,6 +19,7 @@ class SimpleFacerec:
         self.known_face_names = []
         self.patient_data = {}
 
+
     def load_data_from_database(self, base_url):
         connection = pyodbc.connect(
             'DRIVER={SQL Server};'
